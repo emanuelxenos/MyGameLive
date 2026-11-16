@@ -1,0 +1,20 @@
+=== LiveAvatar Iniciando ===
+Janela criada 800x800
+UDP socket aberto na porta 9999
+Carregando personagem.glb...
+Modelo carregado. Meshes=4, Materiais=5
+personagem.glb tem 1 animacoes embutidas
+  Anim[0]: nome='Armature|mixamo.com|Layer0' frames=685 bones=83
+idle carregado: 685 frames
+Total de animacoes no catalogo: 1
+  'idle': 685 frames
+Teclas carregadas: 5 atalhos
+Animacao inicial: 'idle'
+Root bone idx=0 name='mixamorig:Hips' refPos={-0.216, -1.036, -1.264}
+BBox real (pos-anim): X[-0.82..0.82] Y[-0.00..1.86] Z[-0.33..0.26]
+charCenter={0.00, 0.93, -0.03} charHeight=1.86
+Camera PERSPECTIVE configurada: pos={0, 0.95, 2.3} target={0, 0.90, 0}
+Entrando no loop principal...
+Frame 300 | anim='idle' frameAnim=181 | FPS=1.9
+Frame 600 | anim='idle' frameAnim=331 | FPS=1.9
+Encerrando...
