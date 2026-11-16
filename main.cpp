@@ -271,14 +271,14 @@ int main() {
     }
 
     // === CÂMERA FRONTAL (PERSPECTIVA) ===
-    // O modelo exportado do Blender com Transform Applied tem escala 1.0 real e centro em Y=0.9m
+    // O personagem animado no espaço de mundo fica com Y entre -1.85m e 0.00m (centro exato em Y = -0.90m)
     Camera3D camera = { 0 };
-    camera.position   = { 0.0f, 0.95f, 2.3f };
-    camera.target     = { 0.0f, 0.90f, 0.0f };
+    camera.position   = { 0.0f, -0.90f, 2.5f };
+    camera.target     = { 0.0f, -0.90f, 0.0f };
     camera.up         = { 0.0f, 1.0f, 0.0f };
     camera.fovy       = 45.0f;
     camera.projection = CAMERA_PERSPECTIVE;
-    Log("Camera PERSPECTIVE configurada: pos={0, 0.95, 2.3} target={0, 0.90, 0}");
+    Log("Camera centralizada de corpo inteiro: pos={0, -0.90, 2.5} target={0, -0.90, 0}");
     // === FUNDO ===
     // 0=Verde (Chroma Key OBS), 1=Cinza escuro, 2=Magenta
     int modoFundo = 0;
