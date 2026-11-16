@@ -74,45 +74,6 @@ int ObterVKeyPorNome(std::string tecla) {
     return 0;
 }
 
-// Deltas pré-calculados dos morph targets de abertura da boca e queixo
-struct MorphDelta {
-    int vertexIndex;
-    float dx, dy, dz;
-};
-
-// Prim 0: Cabeça/Queixo (Boy01_Body_MAT1)
-const MorphDelta gChinDeltas[] = {
-    {4307, 0.000000f, -0.027813f, -0.007947f},
-    {4320, 0.000000f, -0.017257f, -0.004931f},
-    {4390, 0.000000f, -0.010764f, -0.003075f},
-    {4391, 0.000000f, -0.017959f, -0.005131f},
-    {4420, 0.000000f, -0.011866f, -0.003390f},
-    {4421, 0.000000f, -0.002543f, -0.000726f},
-    {4509, 0.000000f, -0.011240f, -0.003211f},
-    {4510, 0.000000f, -0.018533f, -0.005295f},
-    {4648, 0.000000f, -0.017257f, -0.004931f},
-    {4649, 0.000000f, -0.011240f, -0.003211f},
-    {4726, 0.000000f, -0.011246f, -0.003213f},
-    {4783, 0.000000f, -0.002543f, -0.000726f}
-};
-const int gChinDeltasCount = sizeof(gChinDeltas) / sizeof(gChinDeltas[0]);
-
-// Prim 2: Boca (Boy01_Mouth_MAT2)
-const MorphDelta gMouthDeltas[] = {
-    {6, 0.000000f, -0.027906f, -0.007973f},
-    {8, 0.000000f, -0.017384f, -0.004967f},
-    {10, 0.000000f, -0.010517f, -0.003005f},
-    {11, 0.000000f, -0.019026f, -0.005436f},
-    {12, 0.000000f, -0.011320f, -0.003234f},
-    {13, 0.000000f, -0.018471f, -0.005277f},
-    {26, 0.000000f, -0.017384f, -0.004967f},
-    {27, 0.000000f, -0.011320f, -0.003234f},
-    {28, 0.000000f, -0.010952f, -0.003129f},
-    {39, 0.000000f, -0.002410f, -0.000688f},
-    {45, 0.000000f, -0.002410f, -0.000688f}
-};
-const int gMouthDeltasCount = sizeof(gMouthDeltas) / sizeof(gMouthDeltas[0]);
-
 int main() {
     gLog = fopen("liveavatar_log.txt", "w");
     Log("=== LiveAvatar Iniciando (Audio Lipsync Ativo) ===");
@@ -124,7 +85,7 @@ int main() {
 
     Log("Janela criada 800x800");
 
-    // Inicia captura de áudio WASAPI Loopback (detecta voz/sons do Windows)
+    // Inicia captura de áudio WASAPI Loopback (captura voz/sons do Windows)
     if (AudioDetector::Init()) {
         Log("AudioDetector iniciado com sucesso via WASAPI!");
     } else {
@@ -148,10 +109,9 @@ int main() {
     Model model = { 0 };
     bool modeloCarregado = false;
 
-    // Buffers para sincronização labial híbrida (3D vertex morph + UV atlas)
+    // Buffer de UVs originais da boca
     std::vector<float> baseMouthUVs;
-    std::vector<float> baseChinVertices;
-    std::vector<float> baseMouthVertices;
+    int mouthMeshIndex = -1;
 
     if (FileExists("personagem.glb")) {
         Log("Carregando personagem.glb...");
@@ -159,24 +119,22 @@ int main() {
         modeloCarregado = true;
         Log("Modelo carregado. Meshes=%d, Materiais=%d", model.meshCount, model.materialCount);
 
-        // Copia UVs base da boca (mesh 2) para fallback/ampliação de textura
-        if (model.meshCount > 2 && model.meshes[2].texcoords != nullptr) {
-            int vCount = model.meshes[2].vertexCount;
-            baseMouthUVs.resize(vCount * 2);
-            memcpy(baseMouthUVs.data(), model.meshes[2].texcoords, vCount * 2 * sizeof(float));
-            Log("Base UVs salvas para a boca: %d vertices", vCount);
+        // Identifica qual mesh é a boca (49 vértices ou material Boy01_Mouth_MAT2)
+        for (int i = 0; i < model.meshCount; i++) {
+            if (model.meshes[i].vertexCount == 49) {
+                mouthMeshIndex = i;
+                break;
+            }
+        }
+        if (mouthMeshIndex == -1 && model.meshCount > 2) {
+            mouthMeshIndex = 2; // Índice padrão da primitiva de boca
         }
 
-        // Salva vértices base de posição
-        if (model.meshCount > 0 && model.meshes[0].vertices != nullptr) {
-            int vCount = model.meshes[0].vertexCount;
-            baseChinVertices.resize(vCount * 3);
-            memcpy(baseChinVertices.data(), model.meshes[0].vertices, vCount * 3 * sizeof(float));
-        }
-        if (model.meshCount > 2 && model.meshes[2].vertices != nullptr) {
-            int vCount = model.meshes[2].vertexCount;
-            baseMouthVertices.resize(vCount * 3);
-            memcpy(baseMouthVertices.data(), model.meshes[2].vertices, vCount * 3 * sizeof(float));
+        if (mouthMeshIndex >= 0 && model.meshes[mouthMeshIndex].texcoords != nullptr) {
+            int vCount = model.meshes[mouthMeshIndex].vertexCount;
+            baseMouthUVs.resize(vCount * 2);
+            memcpy(baseMouthUVs.data(), model.meshes[mouthMeshIndex].texcoords, vCount * 2 * sizeof(float));
+            Log("Base UVs salvas para a boca (Mesh %d): %d vertices", mouthMeshIndex, vCount);
         }
     } else {
         Log("ERRO: personagem.glb nao encontrado!");
@@ -327,6 +285,7 @@ int main() {
     float mouthWeight = 0.0f;
     float audioSilenceTimer = 0.0f;
     bool isAudioTalking = false;
+    int currentMouthPhoneme = 0;
 
     Log("Entrando no loop principal...");
 
@@ -396,72 +355,55 @@ int main() {
 
                 if (frameAtual >= animObj.frameCount) {
                     frameAtual = 0;
-                    // Se estava falando e o som parou, retorna para idle
                     if (nomeAnimAtual == "falar" && !isAudioTalking && catalogoAnimacoes.count("idle")) {
                         nomeAnimAtual = "idle";
-                    }
-                    // Se for outra animação disparada pontualmente (ex: dança) e terminar, volta para idle
-                    else if (nomeAnimAtual != "idle" && nomeAnimAtual != "falar" && catalogoAnimacoes.count("idle")) {
+                    } else if (nomeAnimAtual != "idle" && nomeAnimAtual != "falar" && catalogoAnimacoes.count("idle")) {
                         nomeAnimAtual = "idle";
                     }
                 }
 
+                // O Raylib calcula a animação do esqueleto limpa, sem artefatos nos vértices
                 UpdateModelAnimation(model, animObj, frameAtual);
             }
         }
 
-        // 5. Atualização da Boca (Lipsync Híbrido: 3D Vertex Morph + UV Texture Atlas)
-        if (modeloCarregado) {
-            // Método A: Deformação 3D da malha labial e queixo
-            if (model.meshCount > 2 && model.meshes[2].animVertices != nullptr && !baseMouthVertices.empty()) {
-                // Restaura e aplica delta nos animVertices da boca (mesh 2)
-                for (int i = 0; i < gMouthDeltasCount; i++) {
-                    int vi = gMouthDeltas[i].vertexIndex;
-                    int idx = vi * 3;
-                    model.meshes[2].animVertices[idx + 0] = baseMouthVertices[idx + 0] + gMouthDeltas[i].dx * mouthWeight;
-                    model.meshes[2].animVertices[idx + 1] = baseMouthVertices[idx + 1] + gMouthDeltas[i].dy * mouthWeight;
-                    model.meshes[2].animVertices[idx + 2] = baseMouthVertices[idx + 2] + gMouthDeltas[i].dz * mouthWeight;
-                }
-                UpdateMeshBuffer(model.meshes[2], 0, model.meshes[2].animVertices, model.meshes[2].vertexCount * 3 * sizeof(float), 0);
+        // 5. Atualização da Boca (Texture Atlas Facial UV)
+        // O atlas possui 4 estados de boca alinhados verticalmente:
+        // [0] Fechada (repouso) : V offset = 0.0000f
+        // [1] Semi-aberta       : V offset = 0.0963f
+        // [2] Média (vogal)     : V offset = 0.2000f
+        // [3] Aberta (fala alta): V offset = 0.3023f
+        if (modeloCarregado && mouthMeshIndex >= 0 && !baseMouthUVs.empty()) {
+            int targetPhoneme = 0;
+            if (mouthWeight > 0.60f) {
+                targetPhoneme = 3;
+            } else if (mouthWeight > 0.35f) {
+                targetPhoneme = 2;
+            } else if (mouthWeight > 0.08f) {
+                targetPhoneme = 1;
+            } else {
+                targetPhoneme = 0;
             }
 
-            if (model.meshCount > 0 && model.meshes[0].animVertices != nullptr && !baseChinVertices.empty()) {
-                // Aplica delta nos animVertices do queixo/lábio inferior (mesh 0)
-                for (int i = 0; i < gChinDeltasCount; i++) {
-                    int vi = gChinDeltas[i].vertexIndex;
-                    int idx = vi * 3;
-                    model.meshes[0].animVertices[idx + 0] = baseChinVertices[idx + 0] + gChinDeltas[i].dx * mouthWeight;
-                    model.meshes[0].animVertices[idx + 1] = baseChinVertices[idx + 1] + gChinDeltas[i].dy * mouthWeight;
-                    model.meshes[0].animVertices[idx + 2] = baseChinVertices[idx + 2] + gChinDeltas[i].dz * mouthWeight;
-                }
-                UpdateMeshBuffer(model.meshes[0], 0, model.meshes[0].animVertices, model.meshes[0].vertexCount * 3 * sizeof(float), 0);
-            }
+            if (targetPhoneme != currentMouthPhoneme) {
+                currentMouthPhoneme = targetPhoneme;
 
-            // Método B: UV Texture Atlas Fallback / Enriquecimento visual da boca
-            if (model.meshCount > 2 && model.meshes[2].texcoords != nullptr && !baseMouthUVs.empty()) {
-                // No Boy01_FacialAnimMap, as bocas abertas ficam deslocadas verticalmente no atlas V
-                float vOffset = 0.0f;
-                if (mouthWeight > 0.65f) {
-                    vOffset = 0.30f; // Boca bem aberta
-                } else if (mouthWeight > 0.35f) {
-                    vOffset = 0.20f; // Boca intermediária
-                } else if (mouthWeight > 0.10f) {
-                    vOffset = 0.10f; // Boca semi-aberta
-                }
+                float vOffsets[4] = { 0.0000f, 0.0963f, 0.2000f, 0.3023f };
+                float vOffset = vOffsets[currentMouthPhoneme];
 
-                int vCount = model.meshes[2].vertexCount;
+                int vCount = model.meshes[mouthMeshIndex].vertexCount;
                 for (int i = 0; i < vCount; i++) {
-                    model.meshes[2].texcoords[i * 2 + 1] = baseMouthUVs[i * 2 + 1] + vOffset;
+                    model.meshes[mouthMeshIndex].texcoords[i * 2 + 1] = baseMouthUVs[i * 2 + 1] + vOffset;
                 }
-                UpdateMeshBuffer(model.meshes[2], 1, model.meshes[2].texcoords, vCount * 2 * sizeof(float), 0);
+                UpdateMeshBuffer(model.meshes[mouthMeshIndex], 1, model.meshes[mouthMeshIndex].texcoords, vCount * 2 * sizeof(float), 0);
             }
         }
 
         // Log periódico de status
         frameLoop++;
         if (frameLoop % 300 == 0) {
-            Log("Frame %d | anim='%s' frame=%d | Audio=%.3f Mouth=%.2f | FPS=%.1f",
-                frameLoop, nomeAnimAtual.c_str(), frameAtual, currentAudio, mouthWeight, GetFPS());
+            Log("Frame %d | anim='%s' frame=%d | Audio=%.3f Boca=%d (%.2f) | FPS=%.1f",
+                frameLoop, nomeAnimAtual.c_str(), frameAtual, currentAudio, currentMouthPhoneme, mouthWeight, GetFPS());
         }
 
         // 6. Renderização
@@ -483,7 +425,7 @@ int main() {
                 DrawText(status.c_str(), 10, 32, 16, LIGHTGRAY);
 
                 char audioBuf[64];
-                snprintf(audioBuf, sizeof(audioBuf), "Audio: %.1f%% | Boca: %.1f%%", currentAudio * 100.0f, mouthWeight * 100.0f);
+                snprintf(audioBuf, sizeof(audioBuf), "Audio: %.1f%% | Boca nivel: %d", currentAudio * 100.0f, currentMouthPhoneme);
                 DrawText(audioBuf, 10, 52, 16, isAudioTalking ? GREEN : DARKGRAY);
 
                 // Barra visual de áudio

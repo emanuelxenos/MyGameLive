@@ -2,7 +2,6 @@
 cd /d "%~dp0"
 echo Parando processo antigo...
 taskkill /f /im LiveAvatar.exe 2>nul
-timeout /t 1 /nobreak >nul
 
 echo Compilando com suporte a Audio Loopback e Lipsync...
 set PATH=C:\msys64\mingw64\bin;%PATH%
@@ -14,5 +13,5 @@ if %errorlevel% neq 0 (
 )
 echo Compilado com sucesso!
 echo Iniciando LiveAvatar...
-start "" "%~dp0LiveAvatar.exe"
+start LiveAvatar.exe
 echo Pronto! Verifique o arquivo liveavatar_log.txt para diagnostico.
