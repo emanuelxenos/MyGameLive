@@ -8,6 +8,8 @@ O software permite acionar animações corporais dinamicamente através de **tec
 
 ## 🚀 Funcionalidades
 
+- **Reatividade a Áudio & Sincronização Labial (Lipsync):** Captura o áudio do Windows (TTS, Discord, YouTube, reprodutor de áudio) via WASAPI Loopback em tempo real, sem necessidade de cabos virtuais. Enquanto fala, o personagem gesticula e mexe a boca sincronizadamente com o volume da voz.
+- **Lipsync Híbrido Avançado:** Suporta tanto deformação de malha 3D (Morph Targets de queixo e lábios) quanto animação de atlas de textura facial (UV offset) para modelos cartoon/anime.
 - **Chroma Key Integrado:** Fundo verde puro (`#00FF00`) pronto para captura de janela no OBS com filtro de remoção de fundo sem sobrecarregar a GPU.
 - **Suporte a Modelos Mixamo:** Compatível com modelos e esqueletos humanoides no formato standard `.glb` / `.gltf`.
 - **Animações Dinâmicas:** Pasta dedicada `animacoes/` onde basta soltar arquivos `.glb` com o nome da ação desejada.

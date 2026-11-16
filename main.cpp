@@ -1,5 +1,6 @@
 #include "raylib.h"
 #include "raymath.h"
+#include "rlgl.h"
 
 #define WIN32_LEAN_AND_MEAN
 #define NOGDI
@@ -18,6 +19,8 @@ extern "C" __declspec(dllimport) SHORT __stdcall GetAsyncKeyState(int vKey);
 #include <cmath>
 #include <algorithm>
 #include <cstdio>
+
+#include "audio_detector.h"
 
 namespace fs = std::filesystem;
 
@@ -71,17 +74,62 @@ int ObterVKeyPorNome(std::string tecla) {
     return 0;
 }
 
-int main() {
-    // Abre log
-    gLog = fopen("liveavatar_log.txt", "w");
-    Log("=== LiveAvatar Iniciando ===");
+// Deltas pré-calculados dos morph targets de abertura da boca e queixo
+struct MorphDelta {
+    int vertexIndex;
+    float dx, dy, dz;
+};
 
-    SetTraceLogLevel(LOG_WARNING); // Reduz spam do raylib no log
+// Prim 0: Cabeça/Queixo (Boy01_Body_MAT1)
+const MorphDelta gChinDeltas[] = {
+    {4307, 0.000000f, -0.027813f, -0.007947f},
+    {4320, 0.000000f, -0.017257f, -0.004931f},
+    {4390, 0.000000f, -0.010764f, -0.003075f},
+    {4391, 0.000000f, -0.017959f, -0.005131f},
+    {4420, 0.000000f, -0.011866f, -0.003390f},
+    {4421, 0.000000f, -0.002543f, -0.000726f},
+    {4509, 0.000000f, -0.011240f, -0.003211f},
+    {4510, 0.000000f, -0.018533f, -0.005295f},
+    {4648, 0.000000f, -0.017257f, -0.004931f},
+    {4649, 0.000000f, -0.011240f, -0.003211f},
+    {4726, 0.000000f, -0.011246f, -0.003213f},
+    {4783, 0.000000f, -0.002543f, -0.000726f}
+};
+const int gChinDeltasCount = sizeof(gChinDeltas) / sizeof(gChinDeltas[0]);
+
+// Prim 2: Boca (Boy01_Mouth_MAT2)
+const MorphDelta gMouthDeltas[] = {
+    {6, 0.000000f, -0.027906f, -0.007973f},
+    {8, 0.000000f, -0.017384f, -0.004967f},
+    {10, 0.000000f, -0.010517f, -0.003005f},
+    {11, 0.000000f, -0.019026f, -0.005436f},
+    {12, 0.000000f, -0.011320f, -0.003234f},
+    {13, 0.000000f, -0.018471f, -0.005277f},
+    {26, 0.000000f, -0.017384f, -0.004967f},
+    {27, 0.000000f, -0.011320f, -0.003234f},
+    {28, 0.000000f, -0.010952f, -0.003129f},
+    {39, 0.000000f, -0.002410f, -0.000688f},
+    {45, 0.000000f, -0.002410f, -0.000688f}
+};
+const int gMouthDeltasCount = sizeof(gMouthDeltas) / sizeof(gMouthDeltas[0]);
+
+int main() {
+    gLog = fopen("liveavatar_log.txt", "w");
+    Log("=== LiveAvatar Iniciando (Audio Lipsync Ativo) ===");
+
+    SetTraceLogLevel(LOG_WARNING);
     SetConfigFlags(FLAG_MSAA_4X_HINT);
     InitWindow(800, 800, "LiveAvatar");
     SetTargetFPS(60);
 
     Log("Janela criada 800x800");
+
+    // Inicia captura de áudio WASAPI Loopback (detecta voz/sons do Windows)
+    if (AudioDetector::Init()) {
+        Log("AudioDetector iniciado com sucesso via WASAPI!");
+    } else {
+        Log("AVISO: Falha ao iniciar AudioDetector");
+    }
 
     // === UDP ===
     WSADATA wsaData;
@@ -100,11 +148,36 @@ int main() {
     Model model = { 0 };
     bool modeloCarregado = false;
 
+    // Buffers para sincronização labial híbrida (3D vertex morph + UV atlas)
+    std::vector<float> baseMouthUVs;
+    std::vector<float> baseChinVertices;
+    std::vector<float> baseMouthVertices;
+
     if (FileExists("personagem.glb")) {
         Log("Carregando personagem.glb...");
         model = LoadModel("personagem.glb");
         modeloCarregado = true;
         Log("Modelo carregado. Meshes=%d, Materiais=%d", model.meshCount, model.materialCount);
+
+        // Copia UVs base da boca (mesh 2) para fallback/ampliação de textura
+        if (model.meshCount > 2 && model.meshes[2].texcoords != nullptr) {
+            int vCount = model.meshes[2].vertexCount;
+            baseMouthUVs.resize(vCount * 2);
+            memcpy(baseMouthUVs.data(), model.meshes[2].texcoords, vCount * 2 * sizeof(float));
+            Log("Base UVs salvas para a boca: %d vertices", vCount);
+        }
+
+        // Salva vértices base de posição
+        if (model.meshCount > 0 && model.meshes[0].vertices != nullptr) {
+            int vCount = model.meshes[0].vertexCount;
+            baseChinVertices.resize(vCount * 3);
+            memcpy(baseChinVertices.data(), model.meshes[0].vertices, vCount * 3 * sizeof(float));
+        }
+        if (model.meshCount > 2 && model.meshes[2].vertices != nullptr) {
+            int vCount = model.meshes[2].vertexCount;
+            baseMouthVertices.resize(vCount * 3);
+            memcpy(baseMouthVertices.data(), model.meshes[2].vertices, vCount * 3 * sizeof(float));
+        }
     } else {
         Log("ERRO: personagem.glb nao encontrado!");
     }
@@ -112,13 +185,11 @@ int main() {
     // === ANIMAÇÕES ===
     std::unordered_map<std::string, AnimacaoClip> catalogoAnimacoes;
 
-    // Verificação defensiva de animação antes de usar
     auto AnimValida = [](const ModelAnimation& a) -> bool {
         return a.frameCount > 0 && a.framePoses != nullptr;
     };
 
     auto CarregarTodasAnimacoes = [&]() {
-        // Limpa animações antigas
         for (auto& par : catalogoAnimacoes) {
             if (AnimValida(par.second.anim))
                 UnloadModelAnimation(par.second.anim);
@@ -131,26 +202,16 @@ int main() {
             ModelAnimation* anims = LoadModelAnimations("personagem.glb", &qtd);
             Log("personagem.glb tem %d animacoes embutidas", qtd);
             if (anims && qtd > 0) {
-                for (int i = 0; i < qtd; i++) {
-                    Log("  Anim[%d]: nome='%s' frames=%d bones=%d",
-                        i, anims[i].name, anims[i].frameCount, anims[i].boneCount);
-                }
-                // Primeira animação = idle
                 if (AnimValida(anims[0])) {
                     catalogoAnimacoes["idle"] = { "idle", anims[0], true };
                     Log("idle carregado: %d frames", anims[0].frameCount);
                 }
-                // Libera as extras (índice 1 em diante) se houver
-                for (int i = 1; i < qtd; i++) {
-                    UnloadModelAnimation(anims[i]);
-                }
+                for (int i = 1; i < qtd; i++) UnloadModelAnimation(anims[i]);
                 RL_FREE(anims);
-            } else {
-                Log("AVISO: Nenhuma animacao embutida no personagem.glb");
             }
         }
 
-        // Animações da pasta animacoes/
+        // Animações externas na pasta animacoes/
         if (fs::exists("animacoes")) {
             for (const auto& entry : fs::directory_iterator("animacoes")) {
                 if (!entry.is_regular_file()) continue;
@@ -162,7 +223,6 @@ int main() {
                 ModelAnimation* carregadas = LoadModelAnimations(path.c_str(), &count);
                 Log("animacoes/%s.glb: %d animacoes", nomeAcao.c_str(), count);
                 if (carregadas && count > 0 && AnimValida(carregadas[0])) {
-                    // Libera anterior se existir
                     if (catalogoAnimacoes.count(nomeAcao) && AnimValida(catalogoAnimacoes[nomeAcao].anim))
                         UnloadModelAnimation(catalogoAnimacoes[nomeAcao].anim);
                     catalogoAnimacoes[nomeAcao] = { nomeAcao, carregadas[0], true };
@@ -187,7 +247,7 @@ int main() {
         std::ifstream arquivo("config_teclas.ini");
         if (!arquivo.is_open()) {
             std::ofstream padrao("config_teclas.ini");
-            padrao << "F5=idle\nF6=dancar\nF7=tchau\nF8=fundo\nF9=reload\n";
+            padrao << "F5=idle\nF6=dancar\nF7=dancar2\nF8=fundo\nF9=reload\n";
             padrao.close();
             arquivo.open("config_teclas.ini");
         }
@@ -219,68 +279,14 @@ int main() {
     const float ANIM_FPS = 60.0f;
     Log("Animacao inicial: '%s'", nomeAnimAtual.c_str());
 
-    // === DESCOBRE ONDE O PERSONAGEM REALMENTE ESTÁ NO MUNDO ===
-    // Aplica o frame 0 da animação e mede o bounding box REAL (pós-skinning)
-    // Isso resolve o problema do personagem aparecer deslocado/no canto
-    int rootBoneIdx = -1;
-    Vector3 rootBoneRefPos = { 0.0f, 0.0f, 0.0f };
-    Vector3 charCenter = { 0.0f, 0.93f, 0.0f };
-    float   charHeight = 1.86f;
-
-    if (modeloCarregado && !catalogoAnimacoes.empty()) {
-        ModelAnimation& a0 = catalogoAnimacoes.begin()->second.anim;
-
-        // Encontra bone raiz (parent == -1) para travar root motion
-        if (a0.bones != nullptr) {
-            for (int b = 0; b < a0.boneCount; b++) {
-                if (a0.bones[b].parent == -1) {
-                    rootBoneIdx = b;
-                    rootBoneRefPos = a0.framePoses[0][b].translation;
-                    Log("Root bone idx=%d name='%s' refPos={%.3f, %.3f, %.3f}",
-                        b, a0.bones[b].name,
-                        rootBoneRefPos.x, rootBoneRefPos.y, rootBoneRefPos.z);
-                    break;
-                }
-            }
-        }
-
-        // Aplica frame 0 para medir onde os vértices realmente ficam
-        if (AnimValida(a0)) {
-            UpdateModelAnimation(model, a0, 0);
-            BoundingBox bb = GetMeshBoundingBox(model.meshes[0]);
-            for (int mi = 1; mi < model.meshCount; mi++) {
-                BoundingBox b2 = GetMeshBoundingBox(model.meshes[mi]);
-                bb.min.x = fminf(bb.min.x, b2.min.x);
-                bb.min.y = fminf(bb.min.y, b2.min.y);
-                bb.min.z = fminf(bb.min.z, b2.min.z);
-                bb.max.x = fmaxf(bb.max.x, b2.max.x);
-                bb.max.y = fmaxf(bb.max.y, b2.max.y);
-                bb.max.z = fmaxf(bb.max.z, b2.max.z);
-            }
-            charCenter = {
-                (bb.min.x + bb.max.x) * 0.5f,
-                (bb.min.y + bb.max.y) * 0.5f,
-                (bb.min.z + bb.max.z) * 0.5f
-            };
-            charHeight = bb.max.y - bb.min.y;
-            Log("BBox real (pos-anim): X[%.2f..%.2f] Y[%.2f..%.2f] Z[%.2f..%.2f]",
-                bb.min.x, bb.max.x, bb.min.y, bb.max.y, bb.min.z, bb.max.z);
-            Log("charCenter={%.2f, %.2f, %.2f} charHeight=%.2f",
-                charCenter.x, charCenter.y, charCenter.z, charHeight);
-        }
-    }
-
-    // === CÂMERA FRONTAL (PERSPECTIVA) ===
-    // O personagem animado no espaço de mundo fica com Y entre -1.85m e 0.00m (centro exato em Y = -0.90m)
+    // Câmera frontal de corpo inteiro perfeitamente centralizada
     Camera3D camera = { 0 };
     camera.position   = { 0.0f, -0.90f, 2.5f };
     camera.target     = { 0.0f, -0.90f, 0.0f };
     camera.up         = { 0.0f, 1.0f, 0.0f };
     camera.fovy       = 45.0f;
     camera.projection = CAMERA_PERSPECTIVE;
-    Log("Camera centralizada de corpo inteiro: pos={0, -0.90, 2.5} target={0, -0.90, 0}");
-    // === FUNDO ===
-    // 0=Verde (Chroma Key OBS), 1=Cinza escuro, 2=Magenta
+
     int modoFundo = 0;
     Color coresFundo[3] = {
         { 0, 255, 0, 255 },    // Verde Chroma Key
@@ -317,6 +323,11 @@ int main() {
     char buffer[512];
     int frameLoop = 0;
 
+    // Estado do Lipsync e detecção de fala
+    float mouthWeight = 0.0f;
+    float audioSilenceTimer = 0.0f;
+    bool isAudioTalking = false;
+
     Log("Entrando no loop principal...");
 
     while (!WindowShouldClose()) {
@@ -334,7 +345,42 @@ int main() {
                 ProcessarComando(a.comando);
         }
 
-        // 3. Atualização de animação (30 fps, estável)
+        // 3. Detecção de Áudio (WASAPI Loopback)
+        float currentAudio = AudioDetector::GetLevel();
+        float dt = GetFrameTime();
+
+        // Limiar de detecção de fala
+        const float AUDIO_TALK_THRESHOLD = 0.025f;
+
+        if (currentAudio > AUDIO_TALK_THRESHOLD) {
+            audioSilenceTimer = 0.0f;
+            if (!isAudioTalking) {
+                isAudioTalking = true;
+                // Se estiver no idle, inicia animação de falar / gesticular
+                if (nomeAnimAtual == "idle" && catalogoAnimacoes.count("falar")) {
+                    nomeAnimAtual = "falar";
+                    frameAtual = 0;
+                    animTimer = 0.0f;
+                }
+            }
+        } else {
+            audioSilenceTimer += dt;
+            // 0.35s de silêncio contínuo antes de voltar para idle
+            if (audioSilenceTimer > 0.35f && isAudioTalking) {
+                isAudioTalking = false;
+                if (nomeAnimAtual == "falar" && catalogoAnimacoes.count("idle")) {
+                    nomeAnimAtual = "idle";
+                    frameAtual = 0;
+                    animTimer = 0.0f;
+                }
+            }
+        }
+
+        // Suavização do peso de abertura da boca
+        float targetWeight = isAudioTalking ? std::clamp(currentAudio * 1.5f, 0.0f, 1.0f) : 0.0f;
+        mouthWeight += (targetWeight - mouthWeight) * std::min(dt * 20.0f, 1.0f);
+
+        // 4. Atualização da Animação do Esqueleto (60 FPS)
         bool temAnim = modeloCarregado
             && !nomeAnimAtual.empty()
             && catalogoAnimacoes.count(nomeAnimAtual)
@@ -342,7 +388,7 @@ int main() {
 
         if (temAnim) {
             ModelAnimation& animObj = catalogoAnimacoes[nomeAnimAtual].anim;
-            animTimer += GetFrameTime();
+            animTimer += dt;
 
             if (animTimer >= (1.0f / ANIM_FPS)) {
                 animTimer -= (1.0f / ANIM_FPS);
@@ -350,24 +396,75 @@ int main() {
 
                 if (frameAtual >= animObj.frameCount) {
                     frameAtual = 0;
-                    // Volta para idle se não for idle
-                    if (nomeAnimAtual != "idle" && catalogoAnimacoes.count("idle"))
+                    // Se estava falando e o som parou, retorna para idle
+                    if (nomeAnimAtual == "falar" && !isAudioTalking && catalogoAnimacoes.count("idle")) {
                         nomeAnimAtual = "idle";
+                    }
+                    // Se for outra animação disparada pontualmente (ex: dança) e terminar, volta para idle
+                    else if (nomeAnimAtual != "idle" && nomeAnimAtual != "falar" && catalogoAnimacoes.count("idle")) {
+                        nomeAnimAtual = "idle";
+                    }
                 }
 
-                // Animação natural limpa - sem forçar transforms artificiais nos bones
                 UpdateModelAnimation(model, animObj, frameAtual);
             }
         }
 
-        // Log de saúde a cada 300 frames (~5s)
-        frameLoop++;
-        if (frameLoop % 300 == 0) {
-            Log("Frame %d | anim='%s' frameAnim=%d | FPS=%.1f",
-                frameLoop, nomeAnimAtual.c_str(), frameAtual, GetFPS());
+        // 5. Atualização da Boca (Lipsync Híbrido: 3D Vertex Morph + UV Texture Atlas)
+        if (modeloCarregado) {
+            // Método A: Deformação 3D da malha labial e queixo
+            if (model.meshCount > 2 && model.meshes[2].animVertices != nullptr && !baseMouthVertices.empty()) {
+                // Restaura e aplica delta nos animVertices da boca (mesh 2)
+                for (int i = 0; i < gMouthDeltasCount; i++) {
+                    int vi = gMouthDeltas[i].vertexIndex;
+                    int idx = vi * 3;
+                    model.meshes[2].animVertices[idx + 0] = baseMouthVertices[idx + 0] + gMouthDeltas[i].dx * mouthWeight;
+                    model.meshes[2].animVertices[idx + 1] = baseMouthVertices[idx + 1] + gMouthDeltas[i].dy * mouthWeight;
+                    model.meshes[2].animVertices[idx + 2] = baseMouthVertices[idx + 2] + gMouthDeltas[i].dz * mouthWeight;
+                }
+                UpdateMeshBuffer(model.meshes[2], 0, model.meshes[2].animVertices, model.meshes[2].vertexCount * 3 * sizeof(float), 0);
+            }
+
+            if (model.meshCount > 0 && model.meshes[0].animVertices != nullptr && !baseChinVertices.empty()) {
+                // Aplica delta nos animVertices do queixo/lábio inferior (mesh 0)
+                for (int i = 0; i < gChinDeltasCount; i++) {
+                    int vi = gChinDeltas[i].vertexIndex;
+                    int idx = vi * 3;
+                    model.meshes[0].animVertices[idx + 0] = baseChinVertices[idx + 0] + gChinDeltas[i].dx * mouthWeight;
+                    model.meshes[0].animVertices[idx + 1] = baseChinVertices[idx + 1] + gChinDeltas[i].dy * mouthWeight;
+                    model.meshes[0].animVertices[idx + 2] = baseChinVertices[idx + 2] + gChinDeltas[i].dz * mouthWeight;
+                }
+                UpdateMeshBuffer(model.meshes[0], 0, model.meshes[0].animVertices, model.meshes[0].vertexCount * 3 * sizeof(float), 0);
+            }
+
+            // Método B: UV Texture Atlas Fallback / Enriquecimento visual da boca
+            if (model.meshCount > 2 && model.meshes[2].texcoords != nullptr && !baseMouthUVs.empty()) {
+                // No Boy01_FacialAnimMap, as bocas abertas ficam deslocadas verticalmente no atlas V
+                float vOffset = 0.0f;
+                if (mouthWeight > 0.65f) {
+                    vOffset = 0.30f; // Boca bem aberta
+                } else if (mouthWeight > 0.35f) {
+                    vOffset = 0.20f; // Boca intermediária
+                } else if (mouthWeight > 0.10f) {
+                    vOffset = 0.10f; // Boca semi-aberta
+                }
+
+                int vCount = model.meshes[2].vertexCount;
+                for (int i = 0; i < vCount; i++) {
+                    model.meshes[2].texcoords[i * 2 + 1] = baseMouthUVs[i * 2 + 1] + vOffset;
+                }
+                UpdateMeshBuffer(model.meshes[2], 1, model.meshes[2].texcoords, vCount * 2 * sizeof(float), 0);
+            }
         }
 
-        // 4. Renderização
+        // Log periódico de status
+        frameLoop++;
+        if (frameLoop % 300 == 0) {
+            Log("Frame %d | anim='%s' frame=%d | Audio=%.3f Mouth=%.2f | FPS=%.1f",
+                frameLoop, nomeAnimAtual.c_str(), frameAtual, currentAudio, mouthWeight, GetFPS());
+        }
+
+        // 6. Renderização
         BeginDrawing();
             ClearBackground(coresFundo[modoFundo]);
             BeginMode3D(camera);
@@ -379,20 +476,29 @@ int main() {
                 }
             EndMode3D();
 
-            // HUD leve (apenas no fundo não-verde para não sujar o chroma key)
+            // HUD informativo (desabilitado em modo Chroma Key verde)
             if (modoFundo != 0) {
-                DrawText("LiveAvatar", 10, 10, 18, WHITE);
-                std::string status = "Anim: " + (nomeAnimAtual.empty() ? "Nenhuma" : nomeAnimAtual);
+                DrawText("LiveAvatar - Audio Lipsync Ativo", 10, 10, 18, WHITE);
+                std::string status = "Animacao: " + (nomeAnimAtual.empty() ? "Nenhuma" : nomeAnimAtual);
                 DrawText(status.c_str(), 10, 32, 16, LIGHTGRAY);
+
+                char audioBuf[64];
+                snprintf(audioBuf, sizeof(audioBuf), "Audio: %.1f%% | Boca: %.1f%%", currentAudio * 100.0f, mouthWeight * 100.0f);
+                DrawText(audioBuf, 10, 52, 16, isAudioTalking ? GREEN : DARKGRAY);
+
+                // Barra visual de áudio
+                DrawRectangle(10, 75, 200, 10, DARKGRAY);
+                DrawRectangle(10, 75, (int)(200.0f * std::clamp(currentAudio, 0.0f, 1.0f)), 10, GREEN);
+
                 std::string fps = "FPS: " + std::to_string((int)GetFPS());
-                DrawText(fps.c_str(), 10, 52, 14, DARKGRAY);
+                DrawText(fps.c_str(), 10, 92, 14, DARKGRAY);
             }
         EndDrawing();
     }
 
-    Log("Encerrando...");
+    Log("Encerrando LiveAvatar...");
+    AudioDetector::Shutdown();
 
-    // Cleanup
     for (auto& par : catalogoAnimacoes) {
         if (AnimValida(par.second.anim))
             UnloadModelAnimation(par.second.anim);
