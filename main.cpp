@@ -216,7 +216,7 @@ int main() {
 
     int frameAtual = 0;
     float animTimer = 0.0f;
-    const float ANIM_FPS = 30.0f;
+    const float ANIM_FPS = 60.0f;
     Log("Animacao inicial: '%s'", nomeAnimAtual.c_str());
 
     // === DESCOBRE ONDE O PERSONAGEM REALMENTE ESTÁ NO MUNDO ===
