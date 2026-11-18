@@ -118,15 +118,15 @@ int main() {
     bool temBocasAvaturn = false;
     Texture2D* texRostoAvaturn = nullptr;
     // Coordenadas exatas dos lábios no mapa UV (rotacionado 90 graus)
-    const Rectangle kRecBoca = { 841.0f, 781.0f, 48.0f, 48.0f };
+    const Rectangle kRecBoca = { 93.0f, 643.0f, 64.0f, 64.0f };
 
     if (FileExists("boca_0.png") && FileExists("boca_1.png") && FileExists("boca_2.png")) {
         imgBoca0 = LoadImage("boca_0.png");
         imgBoca1 = LoadImage("boca_1.png");
         imgBoca2 = LoadImage("boca_2.png");
-        ImageFormat(&imgBoca0, PIXELFORMAT_UNCOMPRESSED_R8G8B8A8);
-        ImageFormat(&imgBoca1, PIXELFORMAT_UNCOMPRESSED_R8G8B8A8);
-        ImageFormat(&imgBoca2, PIXELFORMAT_UNCOMPRESSED_R8G8B8A8);
+        ImageFormat(&imgBoca0, PIXELFORMAT_UNCOMPRESSED_R8G8B8);
+        ImageFormat(&imgBoca1, PIXELFORMAT_UNCOMPRESSED_R8G8B8);
+        ImageFormat(&imgBoca2, PIXELFORMAT_UNCOMPRESSED_R8G8B8);
         temBocasAvaturn = true;
         Log("Imagens de boca do Avaturn carregadas (64x64 RGBA)");
     }
@@ -140,7 +140,7 @@ int main() {
         // Procura em todos os materiais qual tem a textura de 1024x1024 do rosto
         for (int i = 0; i < model.materialCount; i++) {
             Texture2D& t = model.materials[i].maps[MATERIAL_MAP_DIFFUSE].texture;
-            Log("Material %d: tex.id=%d, w=%d, h=%d", i, t.id, t.width, t.height);
+            Log("Material %d: tex.id=%d, w=%d, h=%d, format=%d, mipmaps=%d", i, t.id, t.width, t.height, t.format, t.mipmaps);
             if (t.width >= 512 && t.height >= 512) {
                 texRostoAvaturn = &t;
                 Log("Encontrada textura real do rosto no Material %d (%dx%d)", i, t.width, t.height);
@@ -367,28 +367,13 @@ int main() {
 
         if (currentAudio > AUDIO_TALK_THRESHOLD) {
             audioSilenceTimer = 0.0f;
-            if (!isAudioTalking) {
-                isAudioTalking = true;
-                // Se estiver no idle, inicia animação de falar / gesticular
-                if (nomeAnimAtual == "idle" && catalogoAnimacoes.count("falar")) {
-                    nomeAnimAtual = "falar";
-                    frameAtual = 0;
-                    animTimer = 0.0f;
-                }
-            }
+            isAudioTalking = true;
         } else {
             audioSilenceTimer += dt;
-            // 0.35s de silêncio contínuo antes de voltar para idle
-            if (audioSilenceTimer > 0.35f && isAudioTalking) {
+            if (audioSilenceTimer > 0.25f) {
                 isAudioTalking = false;
-                if (nomeAnimAtual == "falar" && catalogoAnimacoes.count("idle")) {
-                    nomeAnimAtual = "idle";
-                    frameAtual = 0;
-                    animTimer = 0.0f;
-                }
             }
         }
-
         // Suavização do peso de abertura da boca
         float targetWeight = isAudioTalking ? std::clamp(currentAudio * 1.5f, 0.0f, 1.0f) : 0.0f;
         mouthWeight += (targetWeight - mouthWeight) * std::min(dt * 20.0f, 1.0f);
@@ -529,5 +514,10 @@ int main() {
     CloseWindow();
     return 0;
 }
+
+
+
+
+
 
 
