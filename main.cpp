@@ -1,4 +1,4 @@
-#include "raylib.h"
+﻿#include "raylib.h"
 #include "raymath.h"
 #include "rlgl.h"
 
@@ -113,21 +113,57 @@ int main() {
     std::vector<float> baseMouthUVs;
     int mouthMeshIndex = -1;
 
+    // === TEXTURAS DINÂMICAS DE BOCA DO AVATURN ===
+    Image imgBoca0 = { 0 }, imgBoca1 = { 0 }, imgBoca2 = { 0 };
+    bool temBocasAvaturn = false;
+    Texture2D* texRostoAvaturn = nullptr;
+    // Coordenadas exatas dos lábios no mapa UV (rotacionado 90 graus)
+    const Rectangle kRecBoca = { 841.0f, 781.0f, 48.0f, 48.0f };
+
+    if (FileExists("boca_0.png") && FileExists("boca_1.png") && FileExists("boca_2.png")) {
+        imgBoca0 = LoadImage("boca_0.png");
+        imgBoca1 = LoadImage("boca_1.png");
+        imgBoca2 = LoadImage("boca_2.png");
+        ImageFormat(&imgBoca0, PIXELFORMAT_UNCOMPRESSED_R8G8B8A8);
+        ImageFormat(&imgBoca1, PIXELFORMAT_UNCOMPRESSED_R8G8B8A8);
+        ImageFormat(&imgBoca2, PIXELFORMAT_UNCOMPRESSED_R8G8B8A8);
+        temBocasAvaturn = true;
+        Log("Imagens de boca do Avaturn carregadas (64x64 RGBA)");
+    }
+
     if (FileExists("personagem.glb")) {
         Log("Carregando personagem.glb...");
         model = LoadModel("personagem.glb");
         modeloCarregado = true;
         Log("Modelo carregado. Meshes=%d, Materiais=%d", model.meshCount, model.materialCount);
 
-        // Identifica qual mesh é a boca (49 vértices ou material Boy01_Mouth_MAT2)
+        // Procura em todos os materiais qual tem a textura de 1024x1024 do rosto
+        for (int i = 0; i < model.materialCount; i++) {
+            Texture2D& t = model.materials[i].maps[MATERIAL_MAP_DIFFUSE].texture;
+            Log("Material %d: tex.id=%d, w=%d, h=%d", i, t.id, t.width, t.height);
+            if (t.width >= 512 && t.height >= 512) {
+                texRostoAvaturn = &t;
+                Log("Encontrada textura real do rosto no Material %d (%dx%d)", i, t.width, t.height);
+                break;
+            }
+        }
+
+        // Se nenhuma textura com mais de 512px foi encontrada, carrega avaturn_rosto_diffuse.png
+        if (texRostoAvaturn == nullptr && FileExists("avaturn_rosto_diffuse.png")) {
+            Texture2D texCarregada = LoadTexture("avaturn_rosto_diffuse.png");
+            if (texCarregada.id > 0) {
+                // Atribui ao material do corpo (material 0)
+                model.materials[0].maps[MATERIAL_MAP_DIFFUSE].texture = texCarregada;
+                texRostoAvaturn = &model.materials[0].maps[MATERIAL_MAP_DIFFUSE].texture;
+                Log("Textura avaturn_rosto_diffuse.png aplicada com sucesso ao Material 0 (%dx%d)",
+                    texRostoAvaturn->width, texRostoAvaturn->height);
+            }
+        }
         for (int i = 0; i < model.meshCount; i++) {
             if (model.meshes[i].vertexCount == 49) {
                 mouthMeshIndex = i;
                 break;
             }
-        }
-        if (mouthMeshIndex == -1 && model.meshCount > 2) {
-            mouthMeshIndex = 2; // Índice padrão da primitiva de boca
         }
 
         if (mouthMeshIndex >= 0 && model.meshes[mouthMeshIndex].texcoords != nullptr) {
@@ -237,12 +273,30 @@ int main() {
     const float ANIM_FPS = 60.0f;
     Log("Animacao inicial: '%s'", nomeAnimAtual.c_str());
 
-    // Câmera frontal de corpo inteiro perfeitamente centralizada
+    // Aplica imediatamente o frame 0 para não exibir T-pose no início
+    if (modeloCarregado && !nomeAnimAtual.empty() && catalogoAnimacoes.count(nomeAnimAtual)) {
+        UpdateModelAnimation(model, catalogoAnimacoes[nomeAnimAtual].anim, 0);
+        Log("Frame 0 aplicado imediatamente na inicializacao.");
+    }
+
+    // Câmera frontal de corpo inteiro configurável por config_camera.ini
     Camera3D camera = { 0 };
-    camera.position   = { 0.0f, -0.90f, 2.5f };
-    camera.target     = { 0.0f, -0.90f, 0.0f };
+    float camY = 0.95f, camZ = 2.3f, camFov = 45.0f;
+    {
+        std::ifstream cf("config_camera.ini");
+        if (cf.is_open()) {
+            std::string ln;
+            while (std::getline(cf, ln)) {
+                if (ln.rfind("camY=", 0) == 0)   camY   = std::stof(ln.substr(5));
+                if (ln.rfind("camZ=", 0) == 0)   camZ   = std::stof(ln.substr(5));
+                if (ln.rfind("camFov=", 0) == 0) camFov = std::stof(ln.substr(7));
+            }
+        }
+    }
+    camera.position   = { 0.0f, camY, camZ };
+    camera.target     = { 0.0f, camY, 0.0f };
     camera.up         = { 0.0f, 1.0f, 0.0f };
-    camera.fovy       = 45.0f;
+    camera.fovy       = camFov;
     camera.projection = CAMERA_PERSPECTIVE;
 
     int modoFundo = 0;
@@ -355,11 +409,11 @@ int main() {
 
                 if (frameAtual >= animObj.frameCount) {
                     frameAtual = 0;
+                    // Se estiver falando e o áudio parou, volta para idle
                     if (nomeAnimAtual == "falar" && !isAudioTalking && catalogoAnimacoes.count("idle")) {
                         nomeAnimAtual = "idle";
-                    } else if (nomeAnimAtual != "idle" && nomeAnimAtual != "falar" && catalogoAnimacoes.count("idle")) {
-                        nomeAnimAtual = "idle";
                     }
+                    // Dança e idle continuam em loop normal sem corte abrupto
                 }
 
                 // O Raylib calcula a animação do esqueleto limpa, sem artefatos nos vértices
@@ -373,7 +427,7 @@ int main() {
         // [1] Semi-aberta       : V offset = 0.0963f
         // [2] Média (vogal)     : V offset = 0.2000f
         // [3] Aberta (fala alta): V offset = 0.3023f
-        if (modeloCarregado && mouthMeshIndex >= 0 && !baseMouthUVs.empty()) {
+        if (modeloCarregado) {  // Avaturn: sempre processa boca
             int targetPhoneme = 0;
             if (mouthWeight > 0.60f) {
                 targetPhoneme = 3;
@@ -387,15 +441,31 @@ int main() {
 
             if (targetPhoneme != currentMouthPhoneme) {
                 currentMouthPhoneme = targetPhoneme;
+                Log("Boca nivel: %d (peso=%.2f)", currentMouthPhoneme, mouthWeight);
 
-                float vOffsets[4] = { 0.0000f, 0.0963f, 0.2000f, 0.3023f };
-                float vOffset = vOffsets[currentMouthPhoneme];
+                // 1. Chaveamento UV (para modelos estilo Boy01)
+                if (mouthMeshIndex >= 0 && !baseMouthUVs.empty()) {
+                    float vOffsets[4] = { 0.0000f, 0.0963f, 0.2000f, 0.3023f };
+                    float vOffset = vOffsets[currentMouthPhoneme];
 
-                int vCount = model.meshes[mouthMeshIndex].vertexCount;
-                for (int i = 0; i < vCount; i++) {
-                    model.meshes[mouthMeshIndex].texcoords[i * 2 + 1] = baseMouthUVs[i * 2 + 1] + vOffset;
+                    int vCount = model.meshes[mouthMeshIndex].vertexCount;
+                    for (int i = 0; i < vCount; i++) {
+                        model.meshes[mouthMeshIndex].texcoords[i * 2 + 1] = baseMouthUVs[i * 2 + 1] + vOffset;
+                    }
+                    UpdateMeshBuffer(model.meshes[mouthMeshIndex], 1, model.meshes[mouthMeshIndex].texcoords, vCount * 2 * sizeof(float), 0);
                 }
-                UpdateMeshBuffer(model.meshes[mouthMeshIndex], 1, model.meshes[mouthMeshIndex].texcoords, vCount * 2 * sizeof(float), 0);
+
+                // 2. Chaveamento Dinâmico de Textura (para modelos Avaturn)
+                if (temBocasAvaturn && texRostoAvaturn != nullptr) {
+                    void* pixelsData = nullptr;
+                    if (currentMouthPhoneme == 0) pixelsData = imgBoca0.data;
+                    else if (currentMouthPhoneme == 1) pixelsData = imgBoca1.data;
+                    else pixelsData = imgBoca2.data;
+
+                    if (pixelsData != nullptr) {
+                        UpdateTextureRec(*texRostoAvaturn, kRecBoca, pixelsData);
+                    }
+                }
             }
         }
 
@@ -441,6 +511,12 @@ int main() {
     Log("Encerrando LiveAvatar...");
     AudioDetector::Shutdown();
 
+    if (temBocasAvaturn) {
+        UnloadImage(imgBoca0);
+        UnloadImage(imgBoca1);
+        UnloadImage(imgBoca2);
+    }
+
     for (auto& par : catalogoAnimacoes) {
         if (AnimValida(par.second.anim))
             UnloadModelAnimation(par.second.anim);
@@ -453,3 +529,5 @@ int main() {
     CloseWindow();
     return 0;
 }
+
+

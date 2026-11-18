@@ -1,4 +1,62 @@
-=== LiveAvatar Iniciando ===
+=== LiveAvatar Iniciando (Audio Lipsync Ativo) ===
 Janela criada 800x800
+AudioDetector iniciado com sucesso via WASAPI!
 UDP socket aberto na porta 9999
+Imagens de boca do Avaturn carregadas (64x64 RGBA)
 Carregando personagem.glb...
+Modelo carregado. Meshes=4, Materiais=5
+Material 0: tex.id=1, w=1, h=1
+Material 1: tex.id=3, w=1024, h=1024
+Encontrada textura real do rosto no Material 1 (1024x1024)
+personagem.glb tem 1 animacoes embutidas
+idle carregado: 684 frames
+animacoes/dancar.glb: 1 animacoes
+  Carregado 'dancar': 140 frames
+animacoes/falar.glb: 2 animacoes
+  Carregado 'falar': 684 frames
+Total de animacoes no catalogo: 3
+  'falar': 684 frames
+  'dancar': 140 frames
+  'idle': 684 frames
+Teclas carregadas: 5 atalhos
+Animacao inicial: 'idle'
+Frame 0 aplicado imediatamente na inicializacao.
+Entrando no loop principal...
+Frame 300 | anim='idle' frame=299 | Audio=0.000 Boca=0 (0.00) | FPS=0.0
+Acao: 'dancar'
+Frame 600 | anim='dancar' frame=91 | Audio=0.000 Boca=0 (0.00) | FPS=0.0
+Frame 900 | anim='dancar' frame=111 | Audio=0.000 Boca=0 (0.00) | FPS=0.0
+Frame 1200 | anim='dancar' frame=131 | Audio=0.000 Boca=0 (0.00) | FPS=0.0
+Frame 1500 | anim='dancar' frame=11 | Audio=0.000 Boca=0 (0.00) | FPS=0.0
+Acao: 'dancar'
+Acao: 'dancar'
+Frame 1800 | anim='dancar' frame=66 | Audio=0.000 Boca=0 (0.00) | FPS=0.0
+Acao desconhecida: 'dancar2'
+Fundo mudado para 1
+Fundo mudado para 2
+Frame 2100 | anim='dancar' frame=86 | Audio=0.000 Boca=0 (0.00) | FPS=0.0
+Frame 2400 | anim='dancar' frame=106 | Audio=0.000 Boca=0 (0.00) | FPS=0.0
+Frame 2700 | anim='dancar' frame=126 | Audio=0.000 Boca=0 (0.00) | FPS=0.0
+Acao desconhecida: 'dancar2'
+Acao: 'dancar'
+Acao: 'idle'
+Acao: 'idle'
+Frame 3000 | anim='idle' frame=48 | Audio=0.000 Boca=0 (0.00) | FPS=0.0
+Acao: 'idle'
+Acao: 'dancar'
+Frame 3300 | anim='dancar' frame=51 | Audio=0.000 Boca=0 (0.00) | FPS=0.0
+Acao: 'idle'
+Frame 3600 | anim='idle' frame=203 | Audio=0.000 Boca=0 (0.00) | FPS=0.0
+Acao: 'dancar'
+Frame 3900 | anim='dancar' frame=96 | Audio=0.000 Boca=0 (0.00) | FPS=0.0
+Frame 4200 | anim='dancar' frame=116 | Audio=0.000 Boca=0 (0.00) | FPS=0.0
+Acao: 'idle'
+Acao: 'idle'
+Acao: 'dancar'
+Frame 4500 | anim='dancar' frame=75 | Audio=0.000 Boca=0 (0.00) | FPS=0.0
+Frame 4800 | anim='dancar' frame=95 | Audio=0.000 Boca=0 (0.00) | FPS=0.0
+Frame 5100 | anim='dancar' frame=115 | Audio=0.000 Boca=0 (0.00) | FPS=0.0
+Fundo mudado para 0
+Frame 5400 | anim='dancar' frame=135 | Audio=0.000 Boca=0 (0.00) | FPS=0.0
+Frame 5700 | anim='dancar' frame=15 | Audio=0.000 Boca=0 (0.00) | FPS=0.0
+Encerrando LiveAvatar...
