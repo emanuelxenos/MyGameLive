@@ -118,7 +118,7 @@ int main() {
     bool temBocasAvaturn = false;
     Texture2D* texRostoAvaturn = nullptr;
     // Coordenadas exatas dos lábios no mapa UV (rotacionado 90 graus)
-    const Rectangle kRecBoca = { 93.0f, 643.0f, 64.0f, 64.0f };
+    const Rectangle kRecBoca = { 61.0f, 611.0f, 128.0f, 128.0f };
 
     if (FileExists("boca_0.png") && FileExists("boca_1.png") && FileExists("boca_2.png")) {
         imgBoca0 = LoadImage("boca_0.png");
